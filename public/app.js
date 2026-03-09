@@ -1,4 +1,4 @@
-const STORAGE_KEYS = { theme: "tunehub:theme" };
+const STORAGE_KEYS = { theme: "holo-music:theme" };
 
 const PLATFORM_LABELS = {
   all: "全部",
@@ -43,12 +43,12 @@ const state = {
 
 const elements = {
   body: document.body,
+  authView: document.getElementById("authView"),
+  workspaceView: document.getElementById("workspaceView"),
   themeToggle: document.getElementById("themeToggle"),
   sessionPill: document.getElementById("sessionPill"),
   sessionText: document.getElementById("sessionText"),
   headerNote: document.getElementById("headerNote"),
-  loginPanel: document.querySelector(".login-panel"),
-  accessEyebrow: document.getElementById("accessEyebrow"),
   accessTitle: document.getElementById("accessTitle"),
   accessCopy: document.getElementById("accessCopy"),
   authChip: document.getElementById("authChip"),
@@ -57,9 +57,6 @@ const elements = {
   usernameInput: document.getElementById("usernameInput"),
   passwordInput: document.getElementById("passwordInput"),
   loginButton: document.getElementById("loginButton"),
-  activeSession: document.getElementById("activeSession"),
-  activeUser: document.getElementById("activeUser"),
-  activeExpiry: document.getElementById("activeExpiry"),
   logoutButton: document.getElementById("logoutButton"),
   searchPlatformSwitch: document.getElementById("searchPlatformSwitch"),
   searchForm: document.getElementById("searchForm"),
@@ -105,20 +102,6 @@ function toggleTheme() {
   applyTheme(state.theme === "dark" ? "light" : "dark");
 }
 
-function formatExpiry(timestamp) {
-  if (!timestamp) {
-    return "";
-  }
-  const date = new Date(timestamp * 1000);
-  return `有效至 ${date.toLocaleString("zh-CN", {
-    hour12: false,
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-}
-
 function showToast(title, description) {
   const toast = document.createElement("div");
   toast.className = "toast";
@@ -162,20 +145,10 @@ function inferTrackMaxQuality(track, platform) {
   }
 
   const hints = new Set(track?.quality_hint || []);
-  if (hints.has("Hi-Res")) {
-    return clampQualityForPlatform("flac24bit", platform);
-  }
-  if (hints.has("FLAC")) {
-    return clampQualityForPlatform("flac", platform);
-  }
-  if (hints.has("320k")) {
-    return clampQualityForPlatform("320k", platform);
-  }
-  if (hints.has("128k")) {
-    return "128k";
-  }
-
-  return PLATFORM_MAX_QUALITY[platform] || "320k";
+  if (hints.has("Hi-Res")) return clampQualityForPlatform("flac24bit", platform);
+  if (hints.has("FLAC")) return clampQualityForPlatform("flac", platform);
+  if (hints.has("320k")) return clampQualityForPlatform("320k", platform);
+  return "128k";
 }
 
 function resolveAvailableQualities(track, platform) {
@@ -187,19 +160,17 @@ function resolveAvailableQualities(track, platform) {
 function updateQualityHelper() {
   const recommended = QUALITY_LABELS[state.recommendedQuality];
   const selected = QUALITY_LABELS[state.quality];
-  const selectedTrackName = state.selectedTrack?.name;
 
-  if (selectedTrackName) {
-    const autoCopy = `已按《${selectedTrackName}》自动建议最高可用音质：${recommended}。`;
-    if (state.quality === state.recommendedQuality) {
-      elements.qualityHelper.textContent = `${autoCopy} ${QUALITY_META[state.quality]}`;
-      return;
-    }
-    elements.qualityHelper.textContent = `${autoCopy} 当前手动切到了 ${selected}。`;
+  if (state.selectedTrack) {
+    const intro = `已按《${state.selectedTrack.name}》自动建议最高可用音质：${recommended}。`;
+    elements.qualityHelper.textContent =
+      state.quality === state.recommendedQuality
+        ? `${intro} ${QUALITY_META[state.quality]}`
+        : `${intro} 当前手动切到了 ${selected}。`;
     return;
   }
 
-  elements.qualityHelper.textContent = `当前按平台默认最高档优先：${recommended}。${QUALITY_META[state.quality]}`;
+  elements.qualityHelper.textContent = `当前会优先按平台支持上限推荐：${recommended}。${QUALITY_META[state.quality]}`;
 }
 
 function renderQualityState() {
@@ -211,11 +182,6 @@ function renderQualityState() {
     button.classList.toggle("is-disabled", !available);
     button.classList.toggle("is-recommended", available && quality === state.recommendedQuality);
     button.setAttribute("aria-pressed", String(quality === state.quality));
-    button.title = available
-      ? quality === state.recommendedQuality
-        ? `推荐：${QUALITY_LABELS[quality]}`
-        : QUALITY_LABELS[quality]
-      : "当前歌曲或平台不支持此音质";
   });
   updateQualityHelper();
 }
@@ -242,6 +208,26 @@ function setQuality(quality) {
   }
   state.quality = quality;
   renderQualityState();
+  renderWorkspaceHeader();
+}
+
+function renderWorkspaceHeader() {
+  if (!state.session) {
+    return;
+  }
+  if (state.parseResult) {
+    elements.headerNote.textContent = `《${state.parseResult.name}》已解析完成，可直接下载，也可以展开查看歌词。`;
+    return;
+  }
+  if (state.selectedTrack) {
+    elements.headerNote.textContent = `《${state.selectedTrack.name}》已同步到右侧，当前默认建议音质为 ${QUALITY_LABELS[state.recommendedQuality]}。`;
+    return;
+  }
+  if (state.searchStats?.keyword) {
+    elements.headerNote.textContent = `当前为 ${PLATFORM_LABELS[state.searchPlatform]} 模式，继续输入关键词即可刷新结果。`;
+    return;
+  }
+  elements.headerNote.textContent = "默认聚合搜索，点击结果会自动回填，并优先推荐最高可用音质。";
 }
 
 async function refreshSession() {
@@ -252,42 +238,33 @@ async function refreshSession() {
 
 function renderAuthUi() {
   const authed = Boolean(state.session?.authenticated || state.session?.username);
-  elements.loginPanel.classList.toggle("is-authed", authed);
+
+  elements.authView.classList.toggle("hidden", authed);
+  elements.workspaceView.classList.toggle("hidden", !authed);
   elements.sessionPill.dataset.authState = authed ? "authed" : "guest";
-  elements.sessionText.textContent = authed ? `${state.session.username} 已登录` : "未登录";
+  elements.sessionText.textContent = authed ? `${state.session.username} · 已登录` : "未登录";
   elements.authChip.textContent = authed ? "UNLOCKED" : "LOCKED";
   elements.authChip.classList.toggle("is-authed", authed);
-  elements.authForm.classList.toggle("hidden", authed);
-  elements.activeSession.classList.toggle("hidden", !authed);
 
   if (authed) {
-    elements.accessEyebrow.textContent = "Workspace";
-    elements.accessTitle.textContent = "工作台已解锁";
-    elements.accessCopy.textContent = "直接搜索，点左侧结果会自动填入平台、歌曲 ID 和当前最高建议音质。";
-    elements.headerNote.textContent = "当前已登录，聚合搜索、解析和下载链路都已解锁。";
-    elements.authSummary.textContent = "已解锁，可以直接搜索、解析和下载。";
-    elements.activeUser.textContent = state.session.username;
-    elements.activeExpiry.textContent = formatExpiry(state.session.expiresAt);
+    renderWorkspaceHeader();
   } else {
-    elements.accessEyebrow.textContent = "Access";
-    elements.accessTitle.textContent = "登录后解锁工作台";
-    elements.accessCopy.textContent = "输入站内账号密码后解锁聚合搜索、解析与下载。";
-    elements.headerNote.textContent = "未登录时可浏览界面，登录后可直接搜歌与下载。";
-    elements.authSummary.textContent = "当前未登录，接口处于锁定状态。";
+    elements.accessTitle.textContent = "登录后进入音乐工作台";
+    elements.accessCopy.textContent = "聚合搜索、平台回填、音质推荐和下载链路集中在一个干净工作台里。";
+    elements.authSummary.textContent = "使用站内账号解锁聚合搜索、解析与下载。";
   }
-
-  renderSearchMeta();
 }
 
 async function handleLogin(event) {
   event.preventDefault();
   const username = elements.usernameInput.value.trim();
   const password = elements.passwordInput.value.trim();
+
   if (!username || !password) {
     return showToast("登录失败", "账号和密码都不能为空。");
   }
 
-  setButtonBusy(elements.loginButton, true, "登录中...");
+  setButtonBusy(elements.loginButton, true, "进入中...");
   try {
     const payload = await requestJson("/api/login", {
       method: "POST",
@@ -296,11 +273,15 @@ async function handleLogin(event) {
     state.session = { authenticated: true, username: payload.username, expiresAt: payload.expiresAt };
     elements.passwordInput.value = "";
     renderAuthUi();
+    renderSearchResults();
+    renderSearchMeta();
+    renderSelectedTrack();
+    renderParseResult();
     showToast("已登录", "工作台已解锁，直接输入关键词开始搜索。");
   } catch (error) {
     showToast("登录失败", error.message);
   } finally {
-    setButtonBusy(elements.loginButton, false, "登录");
+    setButtonBusy(elements.loginButton, false, "进入工作台");
   }
 }
 
@@ -316,6 +297,7 @@ async function handleLogout() {
     elements.songIdInput.value = "";
     syncQualityState({ track: null, platform: "kuwo", autoSelect: true });
     renderAuthUi();
+    renderSearchMeta();
     renderSearchResults();
     renderSelectedTrack();
     renderParseResult();
@@ -333,7 +315,7 @@ function renderSearchPlatformSwitch() {
 
 function renderSearchMeta() {
   if (!state.session) {
-    elements.searchMeta.innerHTML = `<span class="search-meta-copy">登录后可搜索。</span>`;
+    elements.searchMeta.innerHTML = `<span class="search-meta-copy">登录后可开始搜索。</span>`;
     return;
   }
 
@@ -364,7 +346,7 @@ function renderSearchResults() {
   elements.searchResults.innerHTML = "";
 
   if (!state.session) {
-    elements.searchResults.innerHTML = `<div class="empty-state"><strong>请先登录</strong><p>登录后才能调用本地搜索与下载接口。</p></div>`;
+    elements.searchResults.innerHTML = `<div class="empty-state"><strong>等待登录</strong><p>登录后即可进入聚合搜索工作台。</p></div>`;
     return;
   }
 
@@ -422,17 +404,12 @@ function selectTrack(item) {
   elements.platformSelect.value = item.platform;
   elements.songIdInput.value = item.id;
   syncQualityState({ track: item, platform: item.platform, autoSelect: true });
+  renderWorkspaceHeader();
   renderSearchMeta();
   renderSearchResults();
   renderSelectedTrack();
   renderParseResult();
-
-  const bestQuality = QUALITY_LABELS[state.recommendedQuality];
-  showToast("已回填", `${item.platformLabel} 的《${item.name}》已带到右侧，默认音质已切到 ${bestQuality}。`);
-
-  if (window.matchMedia("(max-width: 760px)").matches) {
-    elements.selectedTrack.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  showToast("已回填", `${item.platformLabel} 的《${item.name}》已带到右侧，默认音质已切到 ${QUALITY_LABELS[state.recommendedQuality]}。`);
 }
 
 function renderSelectedTrack() {
@@ -470,6 +447,7 @@ function renderParseResult() {
   const track = state.parseResult;
   if (!track) {
     elements.parseOutput.classList.add("hidden");
+    renderWorkspaceHeader();
     return;
   }
 
@@ -501,6 +479,7 @@ function renderParseResult() {
     pill.textContent = entry;
     elements.factRow.append(pill);
   });
+  renderWorkspaceHeader();
 }
 
 async function handleSearch(event) {
@@ -530,17 +509,14 @@ async function runSearch() {
       total: payload.total || state.searchResults.length,
       groups: payload.groups || null,
     };
+    renderWorkspaceHeader();
     renderSearchMeta();
     renderSearchResults();
   } catch (error) {
     state.searchResults = [];
-    state.searchStats = {
-      keyword,
-      total: 0,
-      groups: null,
-    };
-    renderSearchResults();
+    state.searchStats = { keyword, total: 0, groups: null };
     renderSearchMeta();
+    renderSearchResults();
     showToast("搜索失败", error.message);
   } finally {
     setButtonBusy(elements.searchButton, false, "搜索");
@@ -554,9 +530,7 @@ function clearSelectedTrackIfNeeded() {
     && state.selectedTrack.platform === currentPlatform
     && state.selectedTrack.id === currentSongId;
 
-  if (stillMatches) {
-    return;
-  }
+  if (stillMatches) return;
 
   state.selectedTrack = null;
   state.parseResult = null;
@@ -569,6 +543,7 @@ function clearSelectedTrackIfNeeded() {
 function handlePlatformChange() {
   clearSelectedTrackIfNeeded();
   syncQualityState({ track: state.selectedTrack, platform: elements.platformSelect.value, autoSelect: true });
+  renderWorkspaceHeader();
 }
 
 function handleSongIdInput() {
@@ -578,6 +553,7 @@ function handleSongIdInput() {
     platform: elements.platformSelect.value,
     autoSelect: !state.selectedTrack,
   });
+  renderWorkspaceHeader();
 }
 
 async function handleParse(event) {
@@ -629,6 +605,7 @@ function bindPlatformSwitch() {
       state.searchResults = [];
       state.searchStats = null;
       renderSearchPlatformSwitch();
+      renderWorkspaceHeader();
       renderSearchMeta();
       renderSearchResults();
 
@@ -656,6 +633,7 @@ function initialize() {
   applyTheme(resolveInitialTheme());
   renderAuthUi();
   renderSearchPlatformSwitch();
+  renderSearchMeta();
   renderSearchResults();
   renderSelectedTrack();
   renderParseResult();

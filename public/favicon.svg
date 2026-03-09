@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="holoGradient" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF835C" />
+      <stop offset="1" stop-color="#22B8C8" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="#0B1424" />
+  <rect x="6" y="6" width="52" height="52" rx="16" fill="url(#holoGradient)" />
+  <path
+    d="M41.5 16.5V37.4C39.9 35.96 37.69 35.1 35.27 35.1C30.24 35.1 26.17 38.75 26.17 43.27C26.17 47.78 30.24 51.43 35.27 51.43C40.29 51.43 44.37 47.78 44.37 43.27V25.4L51 23.8V34.73C49.4 33.29 47.19 32.43 44.77 32.43C39.74 32.43 35.67 36.09 35.67 40.6C35.67 45.11 39.74 48.77 44.77 48.77C49.79 48.77 53.87 45.11 53.87 40.6V16.77L41.5 19.77V16.5Z"
+    fill="white"
+    fill-opacity="0.94"
+  />
+  <circle cx="18" cy="18" r="2.2" fill="white" fill-opacity="0.82" />
+</svg>
